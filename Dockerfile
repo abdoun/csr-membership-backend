@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y \
     unzip \
     libicu-dev \
     libzip-dev \
-    && docker-php-ext-install intl zip opcache
+    && docker-php-ext-install intl zip opcache pdo_mysql
 
 # Enable Apache mod_rewrite
 RUN a2enmod rewrite

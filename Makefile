@@ -1,14 +1,36 @@
-.PHONY: build run stop logs
+NETWORK=csr-network
+DB_CONTAINER=csr-membership-db
+APP_CONTAINER=csr-membership-app
 
 build:
-	sudo docker build -t csr-membership-app .
+	sudo docker build -t $(APP_CONTAINER) .
 
-run:
-	sudo docker rm -f csr-membership-app || true
-	sudo docker run -d --name csr-membership-app -p 8000:80 -v $(shell pwd):/var/www/html csr-membership-app
+network:
+	sudo docker network create $(NETWORK) || true
+
+db: network
+	sudo docker run -d --name $(DB_CONTAINER) \
+		--network $(NETWORK) \
+		-e MYSQL_ROOT_PASSWORD=root \
+		-e MYSQL_DATABASE=csr_membership \
+		-e MYSQL_USER=user \
+		-e MYSQL_PASSWORD=password \
+		mysql:8.0
+
+run: network
+	sudo docker rm -f $(APP_CONTAINER) || true
+	sudo docker run -d --name $(APP_CONTAINER) \
+		--network $(NETWORK) \
+		-p 8000:80 \
+		-v $(shell pwd):/var/www/html \
+		$(APP_CONTAINER)
 
 stop:
-	sudo docker stop csr-membership-app
+	sudo docker stop $(APP_CONTAINER) $(DB_CONTAINER) || true
+
+clean: stop
+	sudo docker rm $(APP_CONTAINER) $(DB_CONTAINER) || true
+	sudo docker network rm $(NETWORK) || true
 
 logs:
-	sudo docker logs -f csr-membership-app
+	sudo docker logs -f $(APP_CONTAINER)
