@@ -97,4 +97,113 @@ class UserControllerTest extends WebTestCase
         $this->assertNotNull($user);
         $this->assertEquals('basic', $user->getLevel()->value);
     }
+
+    public function testUpdateUser(): void
+    {
+        $adminId = $this->getAdminId();
+        
+        // Create a user to update
+        $user = new User();
+        $user->setName('To Be Updated');
+        $user->setUsername('update_test_' . uniqid());
+        $user->setPassword(md5('password'));
+        $user->setLevel(UserLevel::BASIC);
+        $user->setActive(true);
+        
+        $this->entityManager->persist($user);
+        $this->entityManager->flush();
+        $userId = $user->getId();
+
+        // 1. Admin updates user
+        $this->client->request(
+            'PUT', 
+            '/api/users/' . $userId, 
+            [], 
+            [], 
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_Requester_Id' => $adminId],
+            json_encode(['name' => 'Updated Name'])
+        );
+        $this->assertResponseIsSuccessful();
+        
+        $this->entityManager->clear(); // Clear cache to fetch fresh data
+        $updatedUser = $this->entityManager->getRepository(User::class)->find($userId);
+        $this->assertEquals('Updated Name', $updatedUser->getName());
+
+        // 2. User updates themselves
+        $this->client->request(
+            'PUT', 
+            '/api/users/' . $userId, 
+            [], 
+            [], 
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_Requester_Id' => (string)$userId],
+            json_encode(['name' => 'Self Updated'])
+        );
+        $this->assertResponseIsSuccessful();
+
+        $this->entityManager->clear();
+        $updatedUser = $this->entityManager->getRepository(User::class)->find($userId);
+        $this->assertEquals('Self Updated', $updatedUser->getName());
+
+        // 3. User tries to update someone else (forbidden)
+        $otherUser = new User();
+        $otherUser->setName('Other User');
+        $otherUser->setUsername('other_' . uniqid());
+        $otherUser->setPassword(md5('password'));
+        $otherUser->setLevel(UserLevel::BASIC);
+        $otherUser->setActive(true);
+        $this->entityManager->persist($otherUser);
+        $this->entityManager->flush();
+        $otherUserId = $otherUser->getId();
+
+        $this->client->request(
+            'PUT', 
+            '/api/users/' . $otherUserId, 
+            [], 
+            [], 
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_Requester_Id' => (string)$userId],
+            json_encode(['name' => 'Hacker Update'])
+        );
+        $this->assertResponseStatusCodeSame(403);
+    }
+
+    public function testDeleteUser(): void
+    {
+        $adminId = $this->getAdminId();
+
+        // Create a user to delete
+        $user = new User();
+        $user->setName('To Be Deleted');
+        $user->setUsername('delete_test_' . uniqid());
+        $user->setPassword(md5('password'));
+        $user->setLevel(UserLevel::BASIC);
+        $user->setActive(true);
+        
+        $this->entityManager->persist($user);
+        $this->entityManager->flush();
+        $userId = $user->getId();
+
+        // 1. Non-admin tries to delete (forbidden)
+        $this->client->request(
+            'DELETE', 
+            '/api/users/' . $userId, 
+            [], 
+            [], 
+            ['HTTP_X_Requester_Id' => (string)$userId]
+        );
+        $this->assertResponseStatusCodeSame(403);
+
+        // 2. Admin deletes user
+        $this->client->request(
+            'DELETE', 
+            '/api/users/' . $userId, 
+            [], 
+            [], 
+            ['HTTP_X_Requester_Id' => $adminId]
+        );
+        $this->assertResponseStatusCodeSame(204);
+
+        $this->entityManager->clear();
+        $deletedUser = $this->entityManager->getRepository(User::class)->find($userId);
+        $this->assertNull($deletedUser);
+    }
 }
