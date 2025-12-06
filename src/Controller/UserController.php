@@ -125,14 +125,18 @@ class UserController extends AbstractController
 
         $data = json_decode($request->getContent(), true);
 
-        // Admin can update everything
-        if ($requester->getLevel() === UserLevel::ADMIN) {
+        // Admin or Self can update name and username
+        if ($requester->getLevel() === UserLevel::ADMIN || $requester->getId() === $user->getId()) {
             if (isset($data['name'])) {
                 $user->setName($data['name']);
             }
             if (isset($data['username'])) {
                 $user->setUsername($data['username']);
             }
+        }
+
+        // Only Admin can update level and active status
+        if ($requester->getLevel() === UserLevel::ADMIN) {
             if (isset($data['level'])) {
                  try {
                     $user->setLevel(UserLevel::from($data['level']));
