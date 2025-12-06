@@ -34,3 +34,6 @@ clean: stop
 
 logs:
 	sudo docker logs -f $(APP_CONTAINER)
+
+test:
+	sudo docker exec $(APP_CONTAINER) php bin/phpunit
