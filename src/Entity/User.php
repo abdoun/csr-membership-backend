@@ -5,11 +5,13 @@ namespace App\Entity;
 use App\Enum\UserLevel;
 use App\Repository\UserRepository;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
+use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Validator\Constraints as Assert;
 
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: 'users')]
-class User
+class User implements UserInterface, PasswordAuthenticatedUserInterface
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -97,5 +99,26 @@ class User
         $this->active = $active;
 
         return $this;
+    }
+
+    public function getRoles(): array
+    {
+        $roles = match ($this->level) {
+            UserLevel::ADMIN => ['ROLE_ADMIN', 'ROLE_USER'],
+            UserLevel::ADVANCED => ['ROLE_ADVANCED', 'ROLE_USER'],
+            UserLevel::BASIC => ['ROLE_USER'],
+        };
+
+        return array_unique($roles);
+    }
+
+    public function eraseCredentials(): void
+    {
+        // Not needed for stateless JWT
+    }
+
+    public function getUserIdentifier(): string
+    {
+        return $this->username ?? '';
     }
 }

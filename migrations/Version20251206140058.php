@@ -19,8 +19,8 @@ final class Version20251206140058 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
-        // Insert default admin user (password: admin)
-        $this->addSql("INSERT IGNORE INTO users (name, username, password, level, active) VALUES ('Admin User', 'admin', '21232f297a57a5a743894a0e4a801fc3', 'admin', 1)");
+        // Insert default admin user (password: admin, bcrypt hashed)
+        $this->addSql("INSERT IGNORE INTO users (name, username, password, level, active) VALUES ('Admin User', 'admin', '\$2y\$12\$z.T5wBhT5.fDa65N3QFqxeiqfqKSF8e1whq7KsKsxR4njl1FMEhIW', 'admin', 1)");
     }
 
     public function down(Schema $schema): void
