@@ -28,8 +28,9 @@ run: network
 
 setup-test-db:
 	@sleep 10
-	sudo docker exec $(DB_CONTAINER) mysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS csr_membership_test; GRANT ALL PRIVILEGES ON csr_membership_test.* TO 'user'@'%'; FLUSH PRIVILEGES;" || true
+	sudo docker exec $(DB_CONTAINER) mysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS csr_membership_test; GRANT ALL PRIVILEGES ON csr_membership_test.* TO 'user'@'%'; FLUSH PRIVILEGES;"
 	@sleep 3
+	sudo docker exec -e APP_ENV=test $(APP_CONTAINER) php bin/console doctrine:database:create --if-not-exists || true
 	sudo docker exec -e APP_ENV=test $(APP_CONTAINER) php bin/console doctrine:migrations:migrate --no-interaction
 
 init: clean build db run setup-test-db migrate
