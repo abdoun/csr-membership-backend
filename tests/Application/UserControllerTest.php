@@ -17,34 +17,36 @@ class UserControllerTest extends WebTestCase
         $this->entityManager = $this->client->getContainer()
             ->get('doctrine')
             ->getManager();
-            
-        // Clean up database before each test (optional, but good for isolation)
-        // For simplicity in this environment, we might rely on the fact that we are using a persistent DB
-        // In a real CI, we would use a separate test DB.
-        // Let's just create a unique user for testing to avoid collisions.
     }
 
-    private function getAdminId(): string
+    private function getAdminToken(): string
     {
         $admin = $this->entityManager->getRepository(User::class)->findOneBy(['username' => 'admin']);
+        
         if (!$admin) {
-            // Fallback if migration didn't run or was cleared, though it should be there
-            $admin = new User();
-            $admin->setName('Admin User');
-            $admin->setUsername('admin');
-            $admin->setPassword('21232f297a57a5a743894a0e4a801fc3');
-            $admin->setLevel(UserLevel::ADMIN);
-            $admin->setActive(true);
-            $this->entityManager->persist($admin);
-            $this->entityManager->flush();
+            throw new \Exception('Admin user not found. Ensure migrations ran.');
         }
-        return (string) $admin->getId();
+
+        $this->client->request(
+            'POST',
+            '/api/auth/login',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode([
+                'username' => 'admin',
+                'password' => 'admin',
+            ])
+        );
+
+        $response = json_decode($this->client->getResponse()->getContent(), true);
+        return $response['token'] ?? null;
     }
 
     public function testGetUsersAsAdmin(): void
     {
-        $adminId = $this->getAdminId();
-        $this->client->request('GET', '/api/users', [], [], ['HTTP_X_Requester_Id' => $adminId]);
+        $token = $this->getAdminToken();
+        $this->client->request('GET', '/api/users', [], [], ['HTTP_AUTHORIZATION' => 'Bearer ' . $token]);
 
         $this->assertResponseIsSuccessful();
         $this->assertJson($this->client->getResponse()->getContent());
@@ -55,24 +57,42 @@ class UserControllerTest extends WebTestCase
         // Create a basic user first
         $user = new User();
         $user->setName('Basic User');
-        $user->setUsername('basic_test_' . uniqid());
-        $user->setPassword(md5('password'));
+        $username = 'basic_test_' . uniqid();
+        $user->setUsername($username);
         $user->setLevel(UserLevel::BASIC);
         $user->setActive(true);
         
+        // Manually set bcrypt password for testing
+        $user->setPassword('$2y$12$z.T5wBhT5.fDa65N3QFqxeiqfqKSF8e1whq7KsKsxR4njl1FMEhIW'); // bcrypt('admin')
+        
         $this->entityManager->persist($user);
         $this->entityManager->flush();
-        
-        $userId = $user->getId();
 
-        $this->client->request('GET', '/api/users', [], [], ['HTTP_X_Requester_Id' => (string)$userId]);
+        // Login as basic user
+        $this->client->request(
+            'POST',
+            '/api/auth/login',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode([
+                'username' => $username,
+                'password' => 'admin',
+            ])
+        );
+
+        $response = json_decode($this->client->getResponse()->getContent(), true);
+        $token = $response['token'];
+
+        // Try to access admin endpoint
+        $this->client->request('GET', '/api/users', [], [], ['HTTP_AUTHORIZATION' => 'Bearer ' . $token]);
 
         $this->assertResponseStatusCodeSame(403);
     }
 
     public function testCreateUserAsAdmin(): void
     {
-        $adminId = $this->getAdminId();
+        $token = $this->getAdminToken();
         $username = 'new_user_' . uniqid();
         
         $this->client->request(
@@ -80,7 +100,7 @@ class UserControllerTest extends WebTestCase
             '/api/users', 
             [], 
             [], 
-            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_Requester_Id' => $adminId],
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_AUTHORIZATION' => 'Bearer ' . $token],
             json_encode([
                 'name' => 'New User',
                 'username' => $username,
@@ -100,13 +120,14 @@ class UserControllerTest extends WebTestCase
 
     public function testUpdateUser(): void
     {
-        $adminId = $this->getAdminId();
+        $token = $this->getAdminToken();
         
         // Create a user to update
         $user = new User();
         $user->setName('To Be Updated');
-        $user->setUsername('update_test_' . uniqid());
-        $user->setPassword(md5('password'));
+        $username = 'update_test_' . uniqid();
+        $user->setUsername($username);
+        $user->setPassword('$2y$12$z.T5wBhT5.fDa65N3QFqxeiqfqKSF8e1whq7KsKsxR4njl1FMEhIW'); // bcrypt('admin')
         $user->setLevel(UserLevel::BASIC);
         $user->setActive(true);
         
@@ -120,7 +141,7 @@ class UserControllerTest extends WebTestCase
             '/api/users/' . $userId, 
             [], 
             [], 
-            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_Requester_Id' => $adminId],
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_AUTHORIZATION' => 'Bearer ' . $token],
             json_encode(['name' => 'Updated Name'])
         );
         $this->assertResponseIsSuccessful();
@@ -130,12 +151,27 @@ class UserControllerTest extends WebTestCase
         $this->assertEquals('Updated Name', $updatedUser->getName());
 
         // 2. User updates themselves
+        // Get token for this user
+        $this->client->request(
+            'POST',
+            '/api/auth/login',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode([
+                'username' => $username,
+                'password' => 'admin',
+            ])
+        );
+        $loginResponse = json_decode($this->client->getResponse()->getContent(), true);
+        $userToken = $loginResponse['token'];
+
         $this->client->request(
             'PUT', 
             '/api/users/' . $userId, 
             [], 
             [], 
-            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_Requester_Id' => (string)$userId],
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_AUTHORIZATION' => 'Bearer ' . $userToken],
             json_encode(['name' => 'Self Updated'])
         );
         $this->assertResponseIsSuccessful();
@@ -148,7 +184,7 @@ class UserControllerTest extends WebTestCase
         $otherUser = new User();
         $otherUser->setName('Other User');
         $otherUser->setUsername('other_' . uniqid());
-        $otherUser->setPassword(md5('password'));
+        $otherUser->setPassword('$2y$12$z.T5wBhT5.fDa65N3QFqxeiqfqKSF8e1whq7KsKsxR4njl1FMEhIW'); // bcrypt('admin')
         $otherUser->setLevel(UserLevel::BASIC);
         $otherUser->setActive(true);
         $this->entityManager->persist($otherUser);
@@ -160,7 +196,7 @@ class UserControllerTest extends WebTestCase
             '/api/users/' . $otherUserId, 
             [], 
             [], 
-            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_Requester_Id' => (string)$userId],
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_AUTHORIZATION' => 'Bearer ' . $userToken],
             json_encode(['name' => 'Hacker Update'])
         );
         $this->assertResponseStatusCodeSame(403);
@@ -168,13 +204,14 @@ class UserControllerTest extends WebTestCase
 
     public function testDeleteUser(): void
     {
-        $adminId = $this->getAdminId();
+        $token = $this->getAdminToken();
 
         // Create a user to delete
         $user = new User();
         $user->setName('To Be Deleted');
-        $user->setUsername('delete_test_' . uniqid());
-        $user->setPassword(md5('password'));
+        $username = 'delete_test_' . uniqid();
+        $user->setUsername($username);
+        $user->setPassword('$2y$12$z.T5wBhT5.fDa65N3QFqxeiqfqKSF8e1whq7KsKsxR4njl1FMEhIW'); // bcrypt('admin')
         $user->setLevel(UserLevel::BASIC);
         $user->setActive(true);
         
@@ -183,12 +220,27 @@ class UserControllerTest extends WebTestCase
         $userId = $user->getId();
 
         // 1. Non-admin tries to delete (forbidden)
+        // Get token for this user
+        $this->client->request(
+            'POST',
+            '/api/auth/login',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode([
+                'username' => $username,
+                'password' => 'admin',
+            ])
+        );
+        $loginResponse = json_decode($this->client->getResponse()->getContent(), true);
+        $userToken = $loginResponse['token'];
+
         $this->client->request(
             'DELETE', 
             '/api/users/' . $userId, 
             [], 
             [], 
-            ['HTTP_X_Requester_Id' => (string)$userId]
+            ['HTTP_AUTHORIZATION' => 'Bearer ' . $userToken]
         );
         $this->assertResponseStatusCodeSame(403);
 
@@ -198,7 +250,7 @@ class UserControllerTest extends WebTestCase
             '/api/users/' . $userId, 
             [], 
             [], 
-            ['HTTP_X_Requester_Id' => $adminId]
+            ['HTTP_AUTHORIZATION' => 'Bearer ' . $token]
         );
         $this->assertResponseStatusCodeSame(204);
 

@@ -23,4 +23,57 @@ class UserTest extends TestCase
         $this->assertEquals(UserLevel::BASIC, $user->getLevel());
         $this->assertTrue($user->isActive());
     }
+
+    public function testAdminUserRoles(): void
+    {
+        $user = new User();
+        $user->setLevel(UserLevel::ADMIN);
+
+        $roles = $user->getRoles();
+
+        $this->assertContains('ROLE_ADMIN', $roles);
+        $this->assertContains('ROLE_USER', $roles);
+        $this->assertCount(2, $roles);
+    }
+
+    public function testAdvancedUserRoles(): void
+    {
+        $user = new User();
+        $user->setLevel(UserLevel::ADVANCED);
+
+        $roles = $user->getRoles();
+
+        $this->assertContains('ROLE_ADVANCED', $roles);
+        $this->assertContains('ROLE_USER', $roles);
+        $this->assertCount(2, $roles);
+    }
+
+    public function testBasicUserRoles(): void
+    {
+        $user = new User();
+        $user->setLevel(UserLevel::BASIC);
+
+        $roles = $user->getRoles();
+
+        $this->assertContains('ROLE_USER', $roles);
+        $this->assertCount(1, $roles);
+    }
+
+    public function testUserIdentifier(): void
+    {
+        $user = new User();
+        $user->setUsername('testuser');
+
+        $this->assertEquals('testuser', $user->getUserIdentifier());
+    }
+
+    public function testEraseCredentials(): void
+    {
+        $user = new User();
+        $user->setPassword('secret');
+
+        // Should not throw exception
+        $user->eraseCredentials();
+        $this->assertTrue(true);
+    }
 }

@@ -10,7 +10,10 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -21,18 +24,15 @@ class UserController extends AbstractController
         private UserRepository $userRepository,
         private EntityManagerInterface $entityManager,
         private SerializerInterface $serializer,
-        private ValidatorInterface $validator
+        private ValidatorInterface $validator,
+        private PasswordHasherFactoryInterface $passwordHasherFactory,
     ) {
     }
 
     #[Route('', methods: ['GET'])]
-    public function index(Request $request): JsonResponse
+    #[IsGranted('ROLE_ADMIN')]
+    public function index(): JsonResponse
     {
-        $requester = $this->getRequester($request);
-        if (!$requester || $requester->getLevel() !== UserLevel::ADMIN) {
-            return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
-        }
-
         $users = $this->userRepository->findAll();
         $data = $this->serializer->serialize($users, 'json');
 
@@ -40,13 +40,9 @@ class UserController extends AbstractController
     }
 
     #[Route('/{id}', methods: ['GET'])]
-    public function show(int $id, Request $request): JsonResponse
+    #[IsGranted('ROLE_ADMIN')]
+    public function show(int $id): JsonResponse
     {
-        $requester = $this->getRequester($request);
-        if (!$requester || $requester->getLevel() !== UserLevel::ADMIN) {
-            return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
-        }
-
         $user = $this->userRepository->find($id);
 
         if (!$user) {
@@ -59,13 +55,9 @@ class UserController extends AbstractController
     }
 
     #[Route('', methods: ['POST'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function create(Request $request): JsonResponse
     {
-        $requester = $this->getRequester($request);
-        if (!$requester || $requester->getLevel() !== UserLevel::ADMIN) {
-            return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
-        }
-
         $data = json_decode($request->getContent(), true);
 
         $user = new User();
@@ -73,7 +65,9 @@ class UserController extends AbstractController
         $user->setUsername($data['username'] ?? null);
         
         if (!empty($data['password'])) {
-            $user->setPassword(md5($data['password']));
+            $passwordHasher = $this->passwordHasherFactory->getPasswordHasher(User::class);
+            $hashedPassword = $passwordHasher->hash($data['password']);
+            $user->setPassword($hashedPassword);
         }
         
         if (isset($data['level'])) {
@@ -102,13 +96,9 @@ class UserController extends AbstractController
     }
 
     #[Route('/{id}', methods: ['PUT'])]
-    public function update(int $id, Request $request): JsonResponse
+    #[IsGranted('ROLE_USER')]
+    public function update(int $id, Request $request, #[CurrentUser] User $currentUser): JsonResponse
     {
-        $requester = $this->getRequester($request);
-        if (!$requester) {
-            return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
-        }
-
         $user = $this->userRepository->find($id);
 
         if (!$user) {
@@ -116,9 +106,9 @@ class UserController extends AbstractController
         }
 
         // Access Control Logic
-        if ($requester->getLevel() !== UserLevel::ADMIN) {
+        if ($currentUser->getLevel() !== UserLevel::ADMIN) {
             // Basic/Advanced can only update themselves
-            if ($requester->getId() !== $user->getId()) {
+            if ($currentUser->getId() !== $user->getId()) {
                 return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
             }
         }
@@ -126,7 +116,7 @@ class UserController extends AbstractController
         $data = json_decode($request->getContent(), true);
 
         // Admin or Self can update name and username
-        if ($requester->getLevel() === UserLevel::ADMIN || $requester->getId() === $user->getId()) {
+        if ($currentUser->getLevel() === UserLevel::ADMIN || $currentUser->getId() === $user->getId()) {
             if (isset($data['name'])) {
                 $user->setName($data['name']);
             }
@@ -136,7 +126,7 @@ class UserController extends AbstractController
         }
 
         // Only Admin can update level and active status
-        if ($requester->getLevel() === UserLevel::ADMIN) {
+        if ($currentUser->getLevel() === UserLevel::ADMIN) {
             if (isset($data['level'])) {
                  try {
                     $user->setLevel(UserLevel::from($data['level']));
@@ -152,7 +142,9 @@ class UserController extends AbstractController
         // Everyone (who is allowed here) can update password
         // If non-admin is here, we already checked they are updating themselves
         if (isset($data['password'])) {
-            $user->setPassword(md5($data['password']));
+            $passwordHasher = $this->passwordHasherFactory->getPasswordHasher(User::class);
+            $hashedPassword = $passwordHasher->hash($data['password']);
+            $user->setPassword($hashedPassword);
         }
 
         $errors = $this->validator->validate($user);
@@ -168,13 +160,9 @@ class UserController extends AbstractController
     }
 
     #[Route('/{id}', methods: ['DELETE'])]
-    public function delete(int $id, Request $request): JsonResponse
+    #[IsGranted('ROLE_ADMIN')]
+    public function delete(int $id): JsonResponse
     {
-        $requester = $this->getRequester($request);
-        if (!$requester || $requester->getLevel() !== UserLevel::ADMIN) {
-            return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
-        }
-
         $user = $this->userRepository->find($id);
 
         if (!$user) {
@@ -185,16 +173,5 @@ class UserController extends AbstractController
         $this->entityManager->flush();
 
         return $this->json(null, Response::HTTP_NO_CONTENT);
-    }
-
-    private function getRequester(Request $request): ?User
-    {
-        // SIMULATION: In a real app, this would come from the Security Token
-        // For this task, we assume the client sends 'X-Requester-Id' header
-        $requesterId = $request->headers->get('X-Requester-Id');
-        if (!$requesterId) {
-            return null;
-        }
-        return $this->userRepository->find($requesterId);
     }
 }
