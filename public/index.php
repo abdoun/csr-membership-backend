@@ -2,6 +2,9 @@
 
 use App\Kernel;
 
+$_SERVER['APP_ENV'] = 'prod';
+$_SERVER['APP_DEBUG'] = '1';
+
 require_once dirname(__DIR__).'/vendor/autoload_runtime.php';
 
 return function (array $context) {
