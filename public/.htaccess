@@ -1,5 +1,8 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    
+    # Fix for Authorization header in some shared hosting
+    SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
 
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
@@ -11,4 +14,3 @@
     Require all denied
 </FilesMatch>
 # PHP error log
-php_value error_log /home/jsyrianr/public_html/csr_membership/var/log/php_error.log

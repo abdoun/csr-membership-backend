@@ -12,8 +12,10 @@ if (!is_file(dirname(__DIR__).'/vendor/autoload_runtime.php')) {
     throw new LogicException('Symfony Runtime is missing. Try running "composer require symfony/runtime".');
 }
 
-// Custom: Load .env.prod.php if it exists
-if (file_exists($prodEnv = dirname(__DIR__).'/.env.prod.php')) {
+// Custom: Load .env.prod.php if it exists AND we aren't explicitly in dev/test mode
+// (Checking getenv allows Docker/Makefile to override this by setting APP_ENV=test)
+$existingEnv = $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? getenv('APP_ENV');
+if (file_exists($prodEnv = dirname(__DIR__).'/.env.prod.php') && $existingEnv !== 'test' && $existingEnv !== 'dev') {
     $env = require $prodEnv;
     foreach ($env as $k => $v) {
         $_ENV[$k] = $_SERVER[$k] = (string) $v;

@@ -54,6 +54,7 @@
 ###> symfony/framework-bundle ###
 /.env.local
 /.env.local.php
+/.env.prod.php
 /.env.*.local
 /.env.dev
 /.env.prod
