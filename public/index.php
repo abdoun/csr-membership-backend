@@ -1,24 +1,45 @@
 <?php
 
 use App\Kernel;
+use Symfony\Component\HttpFoundation\Request;
 
-$_SERVER['APP_ENV'] = 'prod';
-$_SERVER['APP_DEBUG'] = '1';
+// 1. Force Errors to display in Debug Mode (Critical for diagnosing issues on cPanel)
+// These will only show if APP_DEBUG=1 is set in your env file.
+ini_set('display_errors', $_SERVER['APP_DEBUG'] ?? 0);
+ini_set('display_startup_errors', $_SERVER['APP_DEBUG'] ?? 0);
+error_reporting(E_ALL);
 
-// Custom: Load .env.prod.php if it exists
-if (file_exists($prodEnv = dirname(__DIR__).'/.env.prod.php')) {
-    $env = require $prodEnv;
+// 2. Define Project Root
+$projectRoot = dirname(__DIR__);
+
+// 3. Load Autoloader
+if (!file_exists($projectRoot . '/vendor/autoload.php')) {
+    die("Vendor autoload missing. Run composer install.");
+}
+require_once $projectRoot . '/vendor/autoload.php';
+
+
+// 4. Custom Env Loading (for .env.prod.php)
+$existingEnv = $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? getenv('APP_ENV');
+// Skip .env.prod.php if in Docker (likely local dev) or explicitly dev/test
+if (file_exists($projectRoot . '/.env.prod.php') && $existingEnv !== 'dev' && $existingEnv !== 'test' && !file_exists('/.dockerenv')) {
+    $env = require $projectRoot . '/.env.prod.php';
     foreach ($env as $k => $v) {
         $_ENV[$k] = $_SERVER[$k] = (string) $v;
     }
-    // Ensure APP_ENV is set to prod if it was in the file
-    if (!isset($_SERVER['APP_ENV'])) {
-        $_SERVER['APP_ENV'] = $_ENV['APP_ENV'] ?? 'prod';
-    }
+} elseif (class_exists(Symfony\Component\Dotenv\Dotenv::class) && file_exists($projectRoot . '/.env')) {
+    // Fallback to .env files for Local Development
+    (new Symfony\Component\Dotenv\Dotenv())->bootEnv($projectRoot . '/.env');
 }
 
-require_once dirname(__DIR__).'/vendor/autoload_runtime.php';
+// 5. Classic Symfony Boot (Bypassing specific Runtime wrapper to avoid 500s)
+// This is the standard index.php from Symfony 4/5, which is more robust on shared hosting.
 
-return function (array $context) {
-    return new Kernel($context['APP_ENV'], (bool) $context['APP_DEBUG']);
-};
+$env = $_SERVER['APP_ENV'] ?? 'prod';
+$debug = (bool) ($_SERVER['APP_DEBUG'] ?? ('prod' !== $env));
+
+$kernel = new Kernel($env, $debug);
+$request = Request::createFromGlobals();
+$response = $kernel->handle($request);
+$response->send();
+$kernel->terminate($request, $response);
