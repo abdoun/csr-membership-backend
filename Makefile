@@ -37,7 +37,7 @@ init: clean build db run setup-test-db migrate
 	@echo "✓ Environment initialized successfully"
 
 migrate:
-	sudo docker exec $(APP_CONTAINER) php bin/console doctrine:migrations:migrate --no-interaction
+	sudo docker exec -e APP_ENV=dev $(APP_CONTAINER) php bin/console doctrine:migrations:migrate --no-interaction
 
 migrate-test:
 	sudo docker exec -e APP_ENV=test $(APP_CONTAINER) php bin/console doctrine:migrations:migrate --no-interaction
